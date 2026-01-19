@@ -1,0 +1,33 @@
+const jwt = require("jsonwebtoken");
+const dotenv = require("dotenv");
+dotenv.config();
+
+function accesstoken(user) {
+  const payload = {
+    _id: user._id,
+    role: user.role,
+  };
+  return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: "2m",
+  });
+}
+
+function refreshtoken(user) {
+  const payload = {
+    _id: user._id,
+  };
+  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, {
+    expiresIn: "1d",
+  });
+}
+
+
+function verifyRefreshToken(token) {
+  const decodeRefreshToken = jwt.verify(
+    token,
+    process.env.REFRESH_TOKEN_SECRET
+  );
+  return decodeRefreshToken;
+}
+
+module.exports = { accesstoken, refreshtoken,verifyRefreshToken };
