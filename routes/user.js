@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const authMiddleware = require("../middleware/authMiddleware")
-const { handleCreateNewUser, handleLoginUser,handleRefreshUsers,handleLogoutUsers } = require("../controller/user");
-const rateLimiter = require("../middleware/rateLimiter");
+const authMiddleware = require("../middlewares/authMiddleware")
+const { handleCreateNewUser, handleLoginUser,handleRefreshUsers,handleLogoutUsers } = require("../controllers/user");
+const rateLimiter = require("../middlewares/rateLimiter");
 
 router.post("/signup", handleCreateNewUser);
 router.post("/login",rateLimiter, handleLoginUser);
