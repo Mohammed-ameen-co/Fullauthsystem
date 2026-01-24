@@ -92,7 +92,7 @@ Through this project, I learned:
 
 ## Author
 
-Aameen Rangrej  
+Ameen Rangrej  
 Backend Developer (MERN Stack)
 
 If you find this project useful, feel free to star the repository!
