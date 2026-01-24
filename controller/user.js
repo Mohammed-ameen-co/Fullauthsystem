@@ -83,7 +83,7 @@ async function handleLoginUser(req, res) {
     return res
       .cookie("jwttoken", createRefreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: process.env.NODE_ENV === "development",
         sameSite: "strict",
       })
       .status(200)
@@ -123,7 +123,7 @@ async function handleLogoutUsers(req, res) {
 
     res.clearCookie("jwttoken", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "development",
       sameSite: "strict",
     });
     return res.status(200).json({
@@ -139,9 +139,10 @@ async function handleLogoutUsers(req, res) {
 // this handler provide new access token 
 async function handleRefreshUsers(req, res) {
   try {
-    if (!req.cookies.jwttoken)
+    if (!req.cookies.jwttoken){
+      console.log(req.cookies.jwttoken)
       return res.status(401).json({ message: "Missing / invalid token" });
-
+    }
     const getRefreshToken = req.cookies.jwttoken;
 
     const decode = verifyRefreshToken(getRefreshToken);
