@@ -29,7 +29,7 @@ const sessionSchema = mongoose.Schema(
 );
 
 
-sessionSchema.index({createdAt: 1},{ expireAfterSeconds: 0 })
+sessionSchema.index({expiresAt: 1},{ expireAfterSeconds: 0 })
 
 
 const Session = mongoose.model("sessions", sessionSchema);

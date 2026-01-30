@@ -8,7 +8,7 @@ function accesstoken(user) {
     role: user.role,
   };
   return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
-    expiresIn: "2m",
+    expiresIn: "5m",
   });
 }
 
