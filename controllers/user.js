@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const Verification = require("../models/Verification");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const Session = require("../models/Session");
@@ -7,6 +8,7 @@ const {
   refreshtoken,
   verifyRefreshToken,
 } = require("../services/tokenService");
+const generateOTP = require("../services/generateVerificationCode");
 
 //this handler create new users
 async function handleCreateNewUser(req, res) {
@@ -40,7 +42,6 @@ async function handleCreateNewUser(req, res) {
     return res.status(400).send("field missing");
   }
 }
-
 
 //this handler login the already availabe users and create refresh and access token
 
@@ -89,9 +90,7 @@ async function handleLoginUser(req, res) {
       .status(200)
       .json({ accessToken: createAccessToken, message: "Logged in" });
   } catch (error) {
-
     console.error(error);
-
 
     return res.status(500).json({ message: "Login failed" });
   }
@@ -135,12 +134,11 @@ async function handleLogoutUsers(req, res) {
   }
 }
 
-
-// this handler provide new access token 
+// this handler provide new access token
 async function handleRefreshUsers(req, res) {
   try {
-    if (!req.cookies.jwttoken){
-      console.log(req.cookies.jwttoken)
+    if (!req.cookies.jwttoken) {
+      console.log(req.cookies.jwttoken);
       return res.status(401).json({ message: "Missing / invalid token" });
     }
     const getRefreshToken = req.cookies.jwttoken;
@@ -178,9 +176,80 @@ async function handleRefreshUsers(req, res) {
   }
 }
 
+//user veryfication request chacke and handle
+
+async function handleVerifiedRequest(req, res) {
+  try {
+    
+    const user = req.user;
+    if (!user)
+      return res.status(401).json({ message: "User not found during auth" });
+
+    if (user.isVerified)
+      return res.status(200).json({ message: "User already verified" });
+
+    const existing = await Verification.findOne({
+      userId: user._id,
+      expiresAt: { $gt: Date.now() },
+    });
+
+    if (existing) return res.status(429).json({ message: "OTP already sent" });
+
+    const otp = generateOTP();
+
+    const hashedOtp = await bcrypt.hash(otp, 10);
+
+    await Verification.create({
+      userId: user._id,
+      token: hashedOtp,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      variant: "email",
+    });
+
+    return res.status(200).json({ message: otp });
+  } catch (error) {
+    return res.status(400).json({ message: error.message  });
+  }
+}
+
+
+//To verify the user
+async function handleVerifiedConfirm(req, res) {
+  try {
+    const { otp } = req.body;
+    if (!otp) return res.status(400).json({ message: "OTP required" });
+
+    const user = req.user;
+    if (!user) return res.status(401).json({ message: "Unauthorized " });
+
+    const record = await Verification.findOne({ userId: user._id });
+
+    if (!record) return res.status(404).json({ message: "OTP not found " });
+
+    if (record.expiresAt < Date.now())
+      return res.status(410).json({ message: "OTP expired" });
+
+    const correct = await bcrypt.compare(otp, record.token);
+
+    if (!correct)
+      return res.status(422).json({ message: "Enter the right OTP " });
+
+    user.isVerified = true;
+    await user.save();
+
+    await Verification.deleteOne({ _id: record._id });
+
+    return res.status(200).json({ message: "succesfully varified " });
+  } catch (error) {
+    return res.status(400).json({ message: error.message  });
+  }
+}
+
 module.exports = {
   handleCreateNewUser,
   handleLoginUser,
   handleRefreshUsers,
   handleLogoutUsers,
+  handleVerifiedRequest,
+  handleVerifiedConfirm
 };
