@@ -91,7 +91,15 @@ async function handleLoginUser(req, res) {
         sameSite: "strict",
       })
       .status(200)
-      .json({ accessToken: createAccessToken, message: "Logged in" });
+      .json({
+        success: true,
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.firstname,
+        },
+        accessToken: createAccessToken,
+      });
   } catch (error) {
     console.error(error);
 
