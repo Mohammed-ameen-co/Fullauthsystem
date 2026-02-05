@@ -36,7 +36,10 @@ async function handleCreateNewUser(req, res) {
       role,
       password: hashPassword,
     });
-    return res.status(200).send("User Succesfully created");
+    return res.status(200).json({
+      success: true,
+      message: "User successfully created",
+    });
   } catch (error) {
     console.error(error);
     return res.status(400).send("field missing");
@@ -180,7 +183,6 @@ async function handleRefreshUsers(req, res) {
 
 async function handleVerifiedRequest(req, res) {
   try {
-    
     const user = req.user;
     if (!user)
       return res.status(401).json({ message: "User not found during auth" });
@@ -208,10 +210,9 @@ async function handleVerifiedRequest(req, res) {
 
     return res.status(200).json({ message: otp });
   } catch (error) {
-    return res.status(400).json({ message: error.message  });
+    return res.status(400).json({ message: error.message });
   }
 }
-
 
 //To verify the user
 async function handleVerifiedConfirm(req, res) {
@@ -241,7 +242,7 @@ async function handleVerifiedConfirm(req, res) {
 
     return res.status(200).json({ message: "succesfully varified " });
   } catch (error) {
-    return res.status(400).json({ message: error.message  });
+    return res.status(400).json({ message: error.message });
   }
 }
 
@@ -251,5 +252,5 @@ module.exports = {
   handleRefreshUsers,
   handleLogoutUsers,
   handleVerifiedRequest,
-  handleVerifiedConfirm
+  handleVerifiedConfirm,
 };
