@@ -27,7 +27,7 @@ async function handleCreateNewUser(req, res) {
         message: "User with this email or phone already exists",
       });
     }
-    const hashPassword = await bcrypt.hash(password, 16);
+    const hashPassword = await bcrypt.hash(password, 10);
     await User.create({
       firstname,
       lastname,
@@ -74,12 +74,12 @@ async function handleLoginUser(req, res) {
     const createAccessToken = accesstoken(user);
     const createRefreshToken = refreshtoken(user);
 
-    const hashedRefreshToken = await bcrypt.hash(createRefreshToken, 16);
+    const hashedRefreshToken = await bcrypt.hash(createRefreshToken, 10);
 
     await Session.create({
       userId: user._id,
-      token: hashedRefreshToken,
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      tokenHash: hashedRefreshToken,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       isRevoked: false,
       device: req.headers["user-agent"],
     });
@@ -87,8 +87,8 @@ async function handleLoginUser(req, res) {
     return res
       .cookie("jwttoken", createRefreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "development",
-        sameSite: "strict",
+        secure: false,
+        sameSite: "lax",
       })
       .status(200)
       .json({
@@ -114,30 +114,33 @@ async function handleLogoutUsers(req, res) {
       return res.status(401).json({ message: "Missing" });
 
     const refreshToken = req.cookies.jwttoken;
-    const sessions = await Session.find({
+    const decode = verifyRefreshToken(refreshToken);
+
+    const session = await Session.findOne({
+      userId: decode._id,
       isRevoked: false,
       expiresAt: { $gt: Date.now() },
     });
 
-    let revoked = false;
-
-    for (const session of sessions) {
-      const match = await bcrypt.compare(refreshToken, session.token);
-      if (match) {
-        session.isRevoked = true;
-        await session.save();
-        revoked = true;
-        break;
-      }
+    if (!session) {
+      return res.status(401).json({ message: "Session not found" });
     }
+
+    const isValidToken = await bcrypt.compare(refreshToken, session.tokenHash);
+    if (!isValidToken) {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    session.isRevoked = true;
+    await session.save();
 
     res.clearCookie("jwttoken", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "development",
-      sameSite: "strict",
+      secure: false,
+      sameSite: "lax",
     });
     return res.status(200).json({
-      message: revoked ? "Logged out successfully" : "Session already invalid",
+      message: "Logged out successfully",
     });
   } catch (error) {
     console.error(error);
@@ -159,24 +162,29 @@ async function handleRefreshUsers(req, res) {
     if (!user)
       return res.status(401).json({ message: "User not found during auth" });
 
-    const sessions = await Session.find({
+    const session = await Session.findOne({
       userId: user._id,
       isRevoked: false,
       expiresAt: { $gt: Date.now() },
     });
-    let validSession = null;
 
-    for (const session of sessions) {
-      const match = await bcrypt.compare(getRefreshToken, session.token);
-      if (match) {
-        validSession = session;
-        break;
-      }
-    }
-
-    if (!validSession) {
+    if (!session) {
       return res.status(401).json({ message: "Session expired or revoked" });
     }
+
+    const isValidToken = await bcrypt.compare(
+      getRefreshToken,
+      session.tokenHash,
+    );
+
+    if (!isValidToken) {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    const SESSION_TTL = 24 * 60 * 60 * 1000 + 60 * 1000;
+    session.expiresAt = new Date(Date.now() + SESSION_TTL);
+
+    await session.save();
 
     const newAccessToken = accesstoken(user);
 
@@ -212,7 +220,7 @@ async function handleVerifiedRequest(req, res) {
     await Verification.create({
       userId: user._id,
       token: hashedOtp,
-      expiresAt: Date.now() + 10 * 60 * 1000,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
       variant: "email",
     });
 
@@ -254,6 +262,17 @@ async function handleVerifiedConfirm(req, res) {
   }
 }
 
+async function handleMe(req, res) {
+  const user = req.user;
+  return res.status(200).json({
+    user: {
+      id: user._id,
+      email: user.email,
+      name: user.firstname,
+    },
+  });
+}
+
 module.exports = {
   handleCreateNewUser,
   handleLoginUser,
@@ -261,4 +280,5 @@ module.exports = {
   handleLogoutUsers,
   handleVerifiedRequest,
   handleVerifiedConfirm,
+  handleMe
 };

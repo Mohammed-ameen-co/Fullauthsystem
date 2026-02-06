@@ -7,7 +7,7 @@ const sessionSchema = mongoose.Schema(
       ref: "users",
       required: true,
     },
-    token: {
+    tokenHash: {
       type: String,
       required: true,
     },
@@ -30,7 +30,7 @@ const sessionSchema = mongoose.Schema(
 
 
 sessionSchema.index({expiresAt: 1},{ expireAfterSeconds: 0 })
-
+sessionSchema.index({ userId: 1, isRevoked: 1 });
 
 const Session = mongoose.model("sessions", sessionSchema);
 
