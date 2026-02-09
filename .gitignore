@@ -4,3 +4,10 @@
 
 #ignore node_modules
 node_modules/
+
+#ignore .vscode
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
