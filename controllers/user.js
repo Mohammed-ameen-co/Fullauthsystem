@@ -11,30 +11,32 @@ const {
 const generateOTP = require("../services/generateVerificationCode");
 
 //this handler create new users
-async function handleCreateNewUser(req, res) {
-  const { firstname, lastname, email, phone, role, password } = req.body;
+async function handleEmailCreateNewUser(req, res) {
+  const { firstname, lastname, email, role, password } = req.body;
   try {
-    if (!email && !phone) {
+    if (!email || !password) {
       return res.status(400).json({
-        message: "Email Or Phone Is Required",
+        message: "Email Is Required",
       });
     }
-    const existingUser = await User.findOne({
-      $or: [email ? { email } : null, phone ? { phone } : null].filter(Boolean),
-    });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
-        message: "User with this email or phone already exists",
+        message: "User with this email already exists",
       });
     }
+
     const hashPassword = await bcrypt.hash(password, 10);
+
     await User.create({
       firstname,
       lastname,
       email,
       phone,
+      authProvider: "email",
       role,
       password: hashPassword,
+      isEmailVerified: false,
     });
     return res.status(200).json({
       success: true,
@@ -48,21 +50,18 @@ async function handleCreateNewUser(req, res) {
 
 //this handler login the already availabe users and create refresh and access token
 
-async function handleLoginUser(req, res) {
-  const { recognizer, password } = req.body;
+async function handleEmailLoginUser(req, res) {
+  const { email, password } = req.body;
 
   console.log("Body", req.body);
 
-  console.log("recognizer", recognizer);
   console.log("password", req.body.password);
 
-  if (!recognizer) {
-    return res.status(400).json({ error: "Email or phone required" });
+  if (!email) {
+    return res.status(400).json({ error: "Email required" });
   }
   try {
-    const user = await User.findOne({
-      $or: [{ email: recognizer }, { phone: recognizer }],
-    });
+    const user = await User.findOne({ email, authProvider: "email" });
     if (!user) {
       return res.status(400).json({ Error: "User not found" });
     }
@@ -96,7 +95,8 @@ async function handleLoginUser(req, res) {
         user: {
           id: user._id,
           email: user.email,
-          name: user.firstname,
+          name: user.firstname || null,
+          isEmailVerified: true,
         },
         accessToken: createAccessToken,
       });
@@ -104,6 +104,122 @@ async function handleLoginUser(req, res) {
     console.error(error);
 
     return res.status(500).json({ message: "Login failed" });
+  }
+}
+
+async function handlePhoneUserOtpRequest(req, res) {
+  try {
+    const { phone } = req.body;
+
+    if (!phone)
+      return res.status(400).json({
+        message: "Phone number is required",
+      });
+
+    if (!/^\d{10}$/.test(phone))
+      return res.status(400).json({ message: "Invalid phone number" });
+
+    const existingOtp = await Verification.findOne({
+      phone,
+      expiresAt: { $gt: Date.now() },
+    });
+
+    if (existingOtp)
+      return res.status(429).json({ message: "OTP already sent" });
+
+    const otp = generateOTP();
+
+    const hashedOtp = await bcrypt.hash(otp,10);
+
+    await Verification.create({
+      phone,
+      token: hashedOtp,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      variant: "phone",
+    });
+
+    console.log("otp for", phone, " is ", otp);
+    return res
+      .status(200)
+      .json({ success: true, message: "OTP sent successfully" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Failed to send OTP",
+    });
+  }
+}
+
+async function handlePhoneUserOtpVerify(req, res) {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp)
+      return res.status(400).json({ message: "Phone and OTP are required" });
+
+    const record = await Verification.findOne({
+      phone,
+      variant: "phone",
+    });
+
+    if (!record) return res.status(404).json({ message: "OTP not found " });
+
+    if (record.expiresAt < Date.now()) {
+      await Verification.deleteOne({ _id: record._id });
+      return res.status(410).json({ message: "OTP expired" });
+    }
+
+    const correct = await bcrypt.compare(otp, record.token);
+
+    if (!correct)
+      return res.status(422).json({ message: "Enter the right OTP " });
+
+    await Verification.deleteOne({ _id: record._id });
+
+    let user = await User.findOne({ phone });
+
+    if (!user) {
+      await User.create({
+        phone,
+        authProvider: "phone",
+        isPhoneVerified: true,
+      });
+    } else if (!user.isPhoneVerified) {
+      user.isPhoneVerified = true;
+      await user.save();
+    }
+
+    const createAccessToken = accesstoken(user);
+    const createRefreshToken = refreshtoken(user);
+
+    const hashedRefreshToken = await bcrypt.hash(createRefreshToken, 10);
+
+    await Session.create({
+      userId: user._id,
+      tokenHash: hashedRefreshToken,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      isRevoked: false,
+      device: req.headers["user-agent"],
+    });
+
+    return res
+      .cookie("jwttoken", createRefreshToken, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+      })
+      .status(200)
+      .json({
+        success: true,
+        user: {
+          id: user._id,
+          phone: user.phone,
+          name: user.firstname || null,
+          isPhoneVerified: true,
+        },
+        accessToken: createAccessToken,
+      });
+  } catch (error) {
+    return res.status(500).json({ message: "Phone OTP verification failed" });
   }
 }
 
@@ -203,8 +319,8 @@ async function handleVerifiedRequest(req, res) {
     if (!user)
       return res.status(401).json({ message: "User not found during auth" });
 
-    if (user.isVerified)
-      return res.status(200).json({ message: "User already verified" });
+    if (user.isEmailVerified)
+      return res.status(200).json({ message: "User email already verified" });
 
     const existing = await Verification.findOne({
       userId: user._id,
@@ -224,6 +340,7 @@ async function handleVerifiedRequest(req, res) {
       variant: "email",
     });
 
+    console.log(otp);
     return res.status(200).json({ message: otp });
   } catch (error) {
     return res.status(400).json({ message: error.message });
@@ -251,7 +368,7 @@ async function handleVerifiedConfirm(req, res) {
     if (!correct)
       return res.status(422).json({ message: "Enter the right OTP " });
 
-    user.isVerified = true;
+    user.isEmailVerified = true;
     await user.save();
 
     await Verification.deleteOne({ _id: record._id });
@@ -267,18 +384,21 @@ async function handleMe(req, res) {
   return res.status(200).json({
     user: {
       id: user._id,
-      email: user.email,
-      name: user.firstname,
+      recognizer: user.email || user.phone,
+      name: user.firstname || null,
+      isVerified: user.isEmailVerified || user.isPhoneVerified,
     },
   });
 }
 
 module.exports = {
-  handleCreateNewUser,
-  handleLoginUser,
+  handleEmailCreateNewUser,
+  handleEmailLoginUser,
+  handlePhoneUserOtpRequest,
+  handlePhoneUserOtpVerify,
   handleRefreshUsers,
   handleLogoutUsers,
   handleVerifiedRequest,
   handleVerifiedConfirm,
-  handleMe
+  handleMe,
 };
