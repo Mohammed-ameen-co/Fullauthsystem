@@ -5,7 +5,15 @@ const verifiedSchema = mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
-      required: true,
+      required: function () {
+        return this.variant === "email";
+      },
+    },
+    phone: {
+      type: String,
+      required: function () {
+        return this.variant === "phone";
+      },
     },
     token: {
       type: String,
@@ -26,9 +34,8 @@ const verifiedSchema = mongoose.Schema(
   },
 );
 
+verifiedSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-verifiedSchema.index({expiresAt: 1},{ expireAfterSeconds: 0 })
-
-const Verification = mongoose.model("userVerifications",verifiedSchema);
+const Verification = mongoose.model("userVerifications", verifiedSchema);
 
 module.exports = Verification;
