@@ -5,17 +5,28 @@ const userSchema = new Schema(
   {
     firstname: {
       type: String,
-      required: true,
+      required: function () {
+        return !!this.email;
+      },
     },
     lastname: {
       type: String,
-      required: true,
+      required: function () {
+        return !!this.email;
+      },
     },
     email: {
       type: String,
     },
     phone: {
       type: String,
+    },
+
+    authProvider: {
+      type: String,
+      enum: ["email", "phone"],
+      default: [],
+      required: true,
     },
     role: {
       type: String,
@@ -25,17 +36,23 @@ const userSchema = new Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: function () {
+        return !!this.email;
+      },
     },
-    isVerified:{
+    isEmailVerified: {
       type: Boolean,
       default: false,
-      required: true,
-    }
+    },
+
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 userSchema.index(
@@ -45,7 +62,7 @@ userSchema.index(
     partialFilterExpression: {
       email: { $exists: true, $ne: null },
     },
-  }
+  },
 );
 
 userSchema.index(
@@ -55,7 +72,7 @@ userSchema.index(
     partialFilterExpression: {
       phone: { $exists: true, $ne: null },
     },
-  }
+  },
 );
 
 const User = mongoose.model("users", userSchema);
