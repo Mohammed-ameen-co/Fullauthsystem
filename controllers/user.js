@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Verification = require("../models/Verification");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const Session = require("../models/Session");
 const {
@@ -19,6 +20,12 @@ async function handleEmailCreateNewUser(req, res) {
         message: "Email Is Required",
       });
     }
+
+    if (password.length < 6)
+      return res.status(400).json({
+        message: "Password must be at least 6 characters",
+      });
+
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
@@ -386,7 +393,112 @@ async function handleVerifiedConfirm(req, res) {
   }
 }
 
-async function handleForgetPassword(req, res) {}
+//This handler send forgot password link
+async function handleForgetPassword(req, res) {
+  try {
+    const { email } = req.body;
+
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(200).json({
+        message: "If this email exists, a reset link has been sent",
+      });
+    }
+
+    await Verification.deleteMany({
+      userId: user._id,
+      variant: "password-reset",
+    });
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    await Verification.create({
+      userId: user._id,
+      token: tokenHash,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      variant: "password-reset",
+    });
+
+    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
+
+    console.log("Password Reset Link:", resetLink);
+
+    // future devlopement add nodemailer to send email
+
+    return res.status(200).json({
+      message: "If this email exists, a reset link has been sent",
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Something went wrong",
+    });
+  }
+}
+
+//The handler reset old password and create new password
+async function handleResetPassword(req, res) {
+  try {
+    const { token, newPassword, confirmPassword } = req.body;
+
+    if (!token || !newPassword || !confirmPassword)
+      return res.status(400).json({ message: "All fields are required" });
+
+    if (newPassword !== confirmPassword)
+      return res.status(400).json({ message: "Passwords do not match" });
+
+    if (newPassword.length < 6)
+      return res.status(400).json({
+        message: "Password must be at least 6 characters",
+      });
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const record = await Verification.findOne({
+      token: tokenHash,
+      variant: "password-reset",
+    });
+
+    if (!record)
+      return res.status(400).json({ message: "Invalid or expired token" });
+
+    if (record.expiresAt < Date.now()) {
+      await Verification.deleteOne({ _id: record._id });
+      return res.status(400).json({ message: "Token expired" });
+    }
+
+    const user = await User.findById(record.userId);
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    user.password = hashedPassword;
+    await user.save();
+
+    await Verification.deleteOne({ _id: record._id });
+
+    await Session.updateMany({ userId: user._id }, { isRevoked: true });
+
+    return res.status(200).json({
+      message: "Password reset successful. Please login again.",
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Something went wrong",
+    });
+  }
+}
+
 async function handleChangePassword(req, res) {
   try {
     const { password, newPassword, conffPassword } = req.body;
@@ -447,5 +559,8 @@ module.exports = {
   handleLogoutUsers,
   handleVerifiedRequest,
   handleVerifiedConfirm,
+  handleForgetPassword,
+  handleResetPassword,
+  handleChangePassword,
   handleMe,
 };
