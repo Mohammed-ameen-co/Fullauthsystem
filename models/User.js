@@ -25,7 +25,6 @@ const userSchema = new Schema(
     authProvider: {
       type: String,
       enum: ["email", "phone"],
-      default: [],
       required: true,
     },
     role: {

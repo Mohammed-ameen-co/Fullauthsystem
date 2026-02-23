@@ -19,6 +19,7 @@ router.post("/signup", handleEmailCreateNewUser);
 router.post("/login", rateLimiter, handleEmailLoginUser);
 
 router.post("/phone/request",handlePhoneUserOtpRequest);
+console.log("me phone verify route ke uper ")
 router.post("/phone/verify",handlePhoneUserOtpVerify);
 
 router.post("/refresh", rateLimiter, handleRefreshUsers);

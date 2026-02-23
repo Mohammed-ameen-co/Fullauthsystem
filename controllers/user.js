@@ -32,7 +32,6 @@ async function handleEmailCreateNewUser(req, res) {
       firstname,
       lastname,
       email,
-      phone,
       authProvider: "email",
       role,
       password: hashPassword,
@@ -96,7 +95,8 @@ async function handleEmailLoginUser(req, res) {
           id: user._id,
           email: user.email,
           name: user.firstname || null,
-          isEmailVerified: true,
+          isEmailVerified: user.isEmailVerified,
+          isPhoneVerified: user.isPhoneVerified,
         },
         accessToken: createAccessToken,
       });
@@ -116,12 +116,15 @@ async function handlePhoneUserOtpRequest(req, res) {
         message: "Phone number is required",
       });
 
+    console.log("Phone type of ", typeof phone);
     if (!/^\d{10}$/.test(phone))
       return res.status(400).json({ message: "Invalid phone number" });
 
+    console.log("Phone type of ", typeof phone);
     const existingOtp = await Verification.findOne({
       phone,
       expiresAt: { $gt: Date.now() },
+      variant: "phone",
     });
 
     if (existingOtp)
@@ -129,7 +132,7 @@ async function handlePhoneUserOtpRequest(req, res) {
 
     const otp = generateOTP();
 
-    const hashedOtp = await bcrypt.hash(otp,10);
+    const hashedOtp = await bcrypt.hash(otp, 10);
 
     await Verification.create({
       phone,
@@ -155,11 +158,14 @@ async function handlePhoneUserOtpVerify(req, res) {
     const { phone, otp } = req.body;
     if (!phone || !otp)
       return res.status(400).json({ message: "Phone and OTP are required" });
+    console.log("me phone verify handler ke ander hu");
 
     const record = await Verification.findOne({
       phone,
       variant: "phone",
     });
+
+    console.log("me record ho otp phone ", record);
 
     if (!record) return res.status(404).json({ message: "OTP not found " });
 
@@ -178,7 +184,7 @@ async function handlePhoneUserOtpVerify(req, res) {
     let user = await User.findOne({ phone });
 
     if (!user) {
-      await User.create({
+      user = await User.create({
         phone,
         authProvider: "phone",
         isPhoneVerified: true,
@@ -192,7 +198,7 @@ async function handlePhoneUserOtpVerify(req, res) {
     const createRefreshToken = refreshtoken(user);
 
     const hashedRefreshToken = await bcrypt.hash(createRefreshToken, 10);
-
+    console.log("me phone verify handler ke session ke uper hu");
     await Session.create({
       userId: user._id,
       tokenHash: hashedRefreshToken,
@@ -214,7 +220,8 @@ async function handlePhoneUserOtpVerify(req, res) {
           id: user._id,
           phone: user.phone,
           name: user.firstname || null,
-          isPhoneVerified: true,
+          isEmailVerified: user.isEmailVerified,
+          isPhoneVerified: user.isPhoneVerified,
         },
         accessToken: createAccessToken,
       });
@@ -326,7 +333,7 @@ async function handleVerifiedRequest(req, res) {
       userId: user._id,
       expiresAt: { $gt: Date.now() },
     });
-
+    console.log("me handler email verify request me hu 1");
     if (existing) return res.status(429).json({ message: "OTP already sent" });
 
     const otp = generateOTP();
@@ -340,7 +347,7 @@ async function handleVerifiedRequest(req, res) {
       variant: "email",
     });
 
-    console.log(otp);
+    console.log("otp", otp);
     return res.status(200).json({ message: otp });
   } catch (error) {
     return res.status(400).json({ message: error.message });
@@ -379,6 +386,45 @@ async function handleVerifiedConfirm(req, res) {
   }
 }
 
+async function handleForgetPassword(req, res) {}
+async function handleChangePassword(req, res) {
+  try {
+    const { password, newPassword, conffPassword } = req.body;
+    const user = req.user;
+
+    if (!user)
+      return res.status(401).json({ message: "User not found during auth" });
+
+    if (!password || !newPassword || !conffPassword)
+      return res.status(400).json({ message: "All fields are required" });
+
+    if (newPassword !== conffPassword)
+      return res.status(400).json({ message: "Password do not match" });
+
+    if (newPassword.length < 6)
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
+
+    const dbUser = await User.findById(user._id);
+
+    const isMatch = await bcrypt.compare(password, dbUser.password);
+
+    if (!isMatch)
+      return res.status(400).json({ message: "Current password is incorrect" });
+
+    const conffHashPassword = await bcrypt.hash(conffPassword, 10);
+
+    dbUser.password = conffHashPassword;
+
+    await dbUser.save();
+
+    return res.status(200).json({ message: "password change" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+
 async function handleMe(req, res) {
   const user = req.user;
   return res.status(200).json({
@@ -386,7 +432,8 @@ async function handleMe(req, res) {
       id: user._id,
       recognizer: user.email || user.phone,
       name: user.firstname || null,
-      isVerified: user.isEmailVerified || user.isPhoneVerified,
+      isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
     },
   });
 }
