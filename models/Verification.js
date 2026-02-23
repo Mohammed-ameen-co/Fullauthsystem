@@ -25,7 +25,7 @@ const verifiedSchema = mongoose.Schema(
     },
     variant: {
       type: String,
-      enum: ["email", "phone"],
+      enum: ["email", "phone", "password-reset"],
       required: true,
     },
   },
